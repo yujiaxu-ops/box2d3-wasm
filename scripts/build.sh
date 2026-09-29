@@ -4,7 +4,7 @@
 # assertions and a source map and writes build/dist-debug/.
 #
 # Needs Emscripten on PATH with EMSDK set (emsdk_env.sh does both; .github/workflows/ci.yml pins the version),
-# CMake, Ninja and Node.
+# CMake, Ninja and Node. The generator itself needs emcc too: it reads the headers through clang.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,21 +34,19 @@ emcmake cmake -S "$ROOT/box2d" -B "$CMAKE_DIR" -G Ninja \
   -DCMAKE_C_FLAGS="${PREFIX_MAP[*]}" >/dev/null
 cmake --build "$CMAKE_DIR" --target box2d >/dev/null
 
-# The bindings: the generated part from the headers (checked against clang's view of them), the hand-written part,
-# one ES module with its wasm beside it.
+# The bindings: the generated part from the headers as clang reads them, the hand-written part, one ES module with
+# its wasm beside it, and the declarations from the same data.
 node "$ROOT/scripts/gen-bindings.mjs"
-node "$ROOT/scripts/check-headers.mjs"
 mkdir -p "$DIST"
 emcc -lembind -msimd128 -msse2 "${PREFIX_MAP[@]}" "${EMCC_MODE[@]}" \
   -I"$ROOT/box2d/include" \
   "$ROOT/csrc/glue.cpp" "$ROOT/csrc/generated.cpp" "$ROOT/csrc/linkage.c" "$CMAKE_DIR/src/$LIB" \
   -o "$DIST/box2d.mjs" \
-  --emit-tsd "$DIST/box2d.d.mts" \
   --post-js csrc/post.js \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createBox2D \
   -sENVIRONMENT=web,worker,node \
   -sALLOW_MEMORY_GROWTH=1 -sFILESYSTEM=0 \
   -sEXPORTED_RUNTIME_METHODS=stackSave,stackRestore \
   -sSTACK_OVERFLOW_CHECK=1
-node "$ROOT/scripts/patch-types.mjs" "$DIST/box2d.d.mts"
+node "$ROOT/scripts/emit-types.mjs" "$DIST/box2d.d.mts"
 ls -l "$DIST"

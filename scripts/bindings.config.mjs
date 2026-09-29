@@ -2,9 +2,6 @@
 // bound by hand in csrc/glue.cpp, which are left out and why, how array fields are sized, which fields of the
 // definition structs stay at their defaults, and the TypeScript signatures of the hand-written functions.
 
-/** Headers read, in dependency order. */
-export const headers = ['base.h', 'id.h', 'math_functions.h', 'collision.h', 'types.h', 'box2d.h'];
-
 /**
  * Definition structs: a JavaScript object of any subset of the fields is applied onto the C default, so a field left
  * out keeps its default and the validation cookie and pointer fields stay right. The rule is "every struct with a
@@ -76,8 +73,8 @@ export const excludedFunctions = {
   b2GetMillisecondsAndReset: 'timing belongs to the host',
   b2Yield: 'single-threaded build',
   b2Hash: 'internal',
-  b2StoreContactId: 'writes a uint32_t[3]; a contact id is a plain object, keep its three fields',
-  b2LoadContactId: 'reads a uint32_t[3]; a contact id is a plain object, keep its three fields',
+  b2StoreContactId: 'writes a uint32_t array; a contact id is a plain object, keep its three fields',
+  b2LoadContactId: 'reads a uint32_t array; a contact id is a plain object, keep its three fields',
   b2World_SetUserData: 'raw pointer user data; see the integer user data functions in glue.cpp',
   b2World_GetUserData: 'raw pointer user data',
   b2Body_SetUserData: 'raw pointer user data',
@@ -96,6 +93,19 @@ export const additions = new Set([
   'b2Joint_SetUserDataInt', 'b2Joint_GetUserDataInt',
   'getMemoryStats',
 ]);
+
+/** What the declarations say about the additions (a header function carries the header's own comment). */
+export const additionDocs = {
+  b2World_SetUserDataInt: 'Stores an integer as the world\'s user data, in place of the raw pointer.',
+  b2World_GetUserDataInt: 'The integer stored as the world\'s user data; 0 when none.',
+  b2Body_SetUserDataInt: 'Stores an integer as the body\'s user data, in place of the raw pointer.',
+  b2Body_GetUserDataInt: 'The integer stored as the body\'s user data; 0 when none.',
+  b2Shape_SetUserDataInt: 'Stores an integer as the shape\'s user data, in place of the raw pointer.',
+  b2Shape_GetUserDataInt: 'The integer stored as the shape\'s user data; 0 when none.',
+  b2Joint_SetUserDataInt: 'Stores an integer as the joint\'s user data, in place of the raw pointer.',
+  b2Joint_GetUserDataInt: 'The integer stored as the joint\'s user data; 0 when none.',
+  getMemoryStats: 'The wasm heap\'s use, from mallinfo: bytes in use and bytes held free.',
+};
 
 /** Functions bound by hand in glue.cpp (callbacks, arrays, strings, out-parameters), with their TypeScript signatures. */
 export const manualFunctions = {

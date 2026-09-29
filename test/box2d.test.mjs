@@ -2,6 +2,7 @@
 // callbacks, arrays, events, the additions, exceptions that never cross wasm, worlds that outlive mistakes, and a
 // run that is reproducible. Box2D's own behaviour is Box2D's business; these tests guard the crossing.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it, before } from 'node:test';
 import createBox2D from '../build/dist/box2d.mjs';
 import createDebugBox2D from '../build/dist-debug/box2d.mjs';
@@ -374,6 +375,17 @@ describe('exceptions never cross wasm', () => {
     }), /inside one of its callbacks/);
     B.b2World_Step(worldId, 1 / 60, 4); // still a world
     B.b2DestroyWorld(worldId);
+  });
+});
+
+describe('the declarations and the module agree', () => {
+  it('every function and enum the declarations name is on the module, and nothing on the module is undeclared', () => {
+    const text = readFileSync(new URL('../build/dist/box2d.d.mts', import.meta.url), 'utf8');
+    const module = text.slice(text.indexOf('export interface Box2D {'));
+    const declared = [...module.matchAll(/^  (?:readonly )?(\w+)[(:]/gm)].map((m) => m[1]).sort();
+    const present = Object.keys(B).filter((name) => name.startsWith('b2') || name === 'getMemoryStats').sort();
+    assert.deepEqual(present, declared);
+    assert.ok(declared.length > 450);
   });
 });
 

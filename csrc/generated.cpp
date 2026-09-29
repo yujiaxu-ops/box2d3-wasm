@@ -736,30 +736,6 @@ EMSCRIPTEN_BINDINGS(box2d_generated) {
         .field("major", &b2Version::major)
         .field("minor", &b2Version::minor)
         .field("revision", &b2Version::revision);
-    value_object<b2WorldId>("b2WorldId")
-        .field("index1", &b2WorldId::index1)
-        .field("generation", &b2WorldId::generation);
-    value_object<b2BodyId>("b2BodyId")
-        .field("index1", &b2BodyId::index1)
-        .field("world0", &b2BodyId::world0)
-        .field("generation", &b2BodyId::generation);
-    value_object<b2ShapeId>("b2ShapeId")
-        .field("index1", &b2ShapeId::index1)
-        .field("world0", &b2ShapeId::world0)
-        .field("generation", &b2ShapeId::generation);
-    value_object<b2ChainId>("b2ChainId")
-        .field("index1", &b2ChainId::index1)
-        .field("world0", &b2ChainId::world0)
-        .field("generation", &b2ChainId::generation);
-    value_object<b2JointId>("b2JointId")
-        .field("index1", &b2JointId::index1)
-        .field("world0", &b2JointId::world0)
-        .field("generation", &b2JointId::generation);
-    value_object<b2ContactId>("b2ContactId")
-        .field("index1", &b2ContactId::index1)
-        .field("world0", &b2ContactId::world0)
-        .field("padding", &b2ContactId::padding)
-        .field("generation", &b2ContactId::generation);
     value_object<b2Vec2>("b2Vec2")
         .field("x", &b2Vec2::x)
         .field("y", &b2Vec2::y);
@@ -919,6 +895,30 @@ EMSCRIPTEN_BINDINGS(box2d_generated) {
     value_object<b2PlaneSolverResult>("b2PlaneSolverResult")
         .field("translation", &b2PlaneSolverResult::translation)
         .field("iterationCount", &b2PlaneSolverResult::iterationCount);
+    value_object<b2WorldId>("b2WorldId")
+        .field("index1", &b2WorldId::index1)
+        .field("generation", &b2WorldId::generation);
+    value_object<b2BodyId>("b2BodyId")
+        .field("index1", &b2BodyId::index1)
+        .field("world0", &b2BodyId::world0)
+        .field("generation", &b2BodyId::generation);
+    value_object<b2ShapeId>("b2ShapeId")
+        .field("index1", &b2ShapeId::index1)
+        .field("world0", &b2ShapeId::world0)
+        .field("generation", &b2ShapeId::generation);
+    value_object<b2ChainId>("b2ChainId")
+        .field("index1", &b2ChainId::index1)
+        .field("world0", &b2ChainId::world0)
+        .field("generation", &b2ChainId::generation);
+    value_object<b2JointId>("b2JointId")
+        .field("index1", &b2JointId::index1)
+        .field("world0", &b2JointId::world0)
+        .field("generation", &b2JointId::generation);
+    value_object<b2ContactId>("b2ContactId")
+        .field("index1", &b2ContactId::index1)
+        .field("world0", &b2ContactId::world0)
+        .field("padding", &b2ContactId::padding)
+        .field("generation", &b2ContactId::generation);
     value_object<b2RayResult>("b2RayResult")
         .field("shapeId", &b2RayResult::shapeId)
         .field("point", &b2RayResult::point)
@@ -1003,16 +1003,6 @@ EMSCRIPTEN_BINDINGS(box2d_generated) {
 
     // ---- functions ----
     function("b2GetVersion", &b2GetVersion);
-    function("b2StoreWorldId", &b2StoreWorldId);
-    function("b2LoadWorldId", &b2LoadWorldId);
-    function("b2StoreBodyId", +[](b2BodyId id) -> double { return static_cast<double>(b2StoreBodyId(id)); });
-    function("b2LoadBodyId", +[](double x) -> b2BodyId { return b2LoadBodyId(toU64(x)); });
-    function("b2StoreShapeId", +[](b2ShapeId id) -> double { return static_cast<double>(b2StoreShapeId(id)); });
-    function("b2LoadShapeId", +[](double x) -> b2ShapeId { return b2LoadShapeId(toU64(x)); });
-    function("b2StoreChainId", +[](b2ChainId id) -> double { return static_cast<double>(b2StoreChainId(id)); });
-    function("b2LoadChainId", +[](double x) -> b2ChainId { return b2LoadChainId(toU64(x)); });
-    function("b2StoreJointId", +[](b2JointId id) -> double { return static_cast<double>(b2StoreJointId(id)); });
-    function("b2LoadJointId", +[](double x) -> b2JointId { return b2LoadJointId(toU64(x)); });
     function("b2IsValidFloat", &b2IsValidFloat);
     function("b2IsValidVec2", &b2IsValidVec2);
     function("b2IsValidRotation", &b2IsValidRotation);
@@ -1129,6 +1119,16 @@ EMSCRIPTEN_BINDINGS(box2d_generated) {
     function("b2CollidePolygons", +[](const b2Polygon& polygonA, b2Transform xfA, const b2Polygon& polygonB, b2Transform xfB) -> b2Manifold { return b2CollidePolygons(&polygonA, xfA, &polygonB, xfB); });
     function("b2CollideSegmentAndPolygon", +[](const b2Segment& segmentA, b2Transform xfA, const b2Polygon& polygonB, b2Transform xfB) -> b2Manifold { return b2CollideSegmentAndPolygon(&segmentA, xfA, &polygonB, xfB); });
     function("b2CollideChainSegmentAndCircle", +[](const b2ChainSegment& segmentA, b2Transform xfA, const b2Circle& circleB, b2Transform xfB) -> b2Manifold { return b2CollideChainSegmentAndCircle(&segmentA, xfA, &circleB, xfB); });
+    function("b2StoreWorldId", &b2StoreWorldId);
+    function("b2LoadWorldId", &b2LoadWorldId);
+    function("b2StoreBodyId", +[](b2BodyId id) -> double { return static_cast<double>(b2StoreBodyId(id)); });
+    function("b2LoadBodyId", +[](double x) -> b2BodyId { return b2LoadBodyId(toU64(x)); });
+    function("b2StoreShapeId", +[](b2ShapeId id) -> double { return static_cast<double>(b2StoreShapeId(id)); });
+    function("b2LoadShapeId", +[](double x) -> b2ShapeId { return b2LoadShapeId(toU64(x)); });
+    function("b2StoreChainId", +[](b2ChainId id) -> double { return static_cast<double>(b2StoreChainId(id)); });
+    function("b2LoadChainId", +[](double x) -> b2ChainId { return b2LoadChainId(toU64(x)); });
+    function("b2StoreJointId", +[](b2JointId id) -> double { return static_cast<double>(b2StoreJointId(id)); });
+    function("b2LoadJointId", +[](double x) -> b2JointId { return b2LoadJointId(toU64(x)); });
     function("b2DefaultWorldDef", +[]() -> val { return b2WorldDefToJS(b2DefaultWorldDef()); });
     function("b2DefaultBodyDef", +[]() -> val { return b2BodyDefToJS(b2DefaultBodyDef()); });
     function("b2DefaultFilter", +[]() -> val { return b2FilterToJS(b2DefaultFilter()); });

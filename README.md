@@ -85,23 +85,24 @@ csrc/post.js           appended to the module: the callback guard and the wrappe
 csrc/linkage.c         reaches b2Body_ClearForces, which the header declares without C linkage at the pinned commit
 csrc/generated.*       what scripts/gen-bindings.mjs writes from Box2D's headers (committed, so a diff shows a change)
 scripts/bindings.config.mjs  the decisions: what is hand-written, what is excluded and why, the hand-written signatures
-scripts/gen-bindings.mjs     the generator
-scripts/check-headers.mjs    asks clang for every function in the headers and fails if the generator missed one
-scripts/patch-types.mjs      completes the declaration file Emscripten emits
+scripts/gen-bindings.mjs     the generator: reads the headers as clang's AST, writes the bindings and build/api.json
+scripts/emit-types.mjs       writes the declaration file from build/api.json, Box2D's doc comments included
 scripts/build.sh             the whole build
 build/dist/, build/dist-debug/   the artifacts, committed
 test/                  the binding's contract (node:test) and a compiled type check of the declarations
 ```
 
-Every function in Box2D's headers is generated, hand-written or listed as excluded; the generator fails otherwise,
-and at build time clang's view of the headers is compared with the generator's. The type patcher fails when anything
-it expects to complete is not there. So a Box2D update that adds, renames or changes a function stops the build until
-the change is decided on.
+The generator's one source is clang's view of `box2d.h` (`emcc -Xclang -ast-dump=json`): every enum, struct, field,
+array size, function, parameter name and doc comment comes from the compiler. Every function in the headers is
+generated, hand-written or listed as excluded; the generator fails otherwise. The declarations are written from the
+same data that made the bindings, and a test checks the module against them. So a Box2D update that adds, renames
+or changes a function stops the build until the change is decided on.
 
 ## Build
 
 Needs [emsdk](https://emscripten.org/docs/getting_started/downloads.html) 4.0.18 (the version
-`.github/workflows/ci.yml` pins), CMake, Ninja and Node 22.
+`.github/workflows/ci.yml` pins; the generator reads the headers through its clang, so `npm run gen` needs it too),
+CMake, Ninja and Node 22.
 
 ```sh
 git submodule update --init
@@ -120,9 +121,10 @@ variants on every push and fails when the committed artifacts differ from what t
 
 ### Updating Box2D
 
-Move the submodule, rebuild, and read what the generator and the header check report: new functions must be
-excluded or, when they need help, written in `glue.cpp` and declared in `bindings.config.mjs`; renamed or removed
-ones fail the type patcher. A newer Box2D changes simulation results, so treat it as a release of its own.
+Move the submodule, rebuild, and read what the generator reports: new functions must be excluded or, when they
+need help, written in `glue.cpp` and declared in `bindings.config.mjs`; a hand-written function whose header
+declaration went away fails the generator too. A newer Box2D changes simulation results, so treat it as a release
+of its own.
 
 ## License
 

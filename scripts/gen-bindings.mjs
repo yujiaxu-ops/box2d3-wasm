@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Generates csrc/generated.cpp, csrc/generated.h and build/api.json from Box2D's public headers.
+// Generates csrc/generated.cpp, csrc/generated.h and build/api.json from Box2D's public headers, as clang sees them:
+// the one source is `emcc -Xclang -ast-dump=json` over box2d.h, so every enum, struct, field, function, parameter
+// name, array size and doc comment comes from the compiler, not from a pattern over the text.
 //
 // Every enum becomes an embind enum. Every plain struct (scalars, enums, other plain structs, fixed arrays of them)
 // becomes a value object: a plain JavaScript object on the JavaScript side, copied on every crossing, nothing to
@@ -8,95 +10,87 @@
 // validation cookie and pointer fields stay right and a field left out keeps its default. Every function whose
 // signature is scalars, enums, plain structs, pointers to plain structs (taken by value) or definitions (converted)
 // is bound in one line; the rest is listed for csrc/glue.cpp (`manualFunctions`) or left out
-// (`excludedFunctions`), and the generator fails if a header function is in none of the three. Functions are found
-// by the shape of their declaration, not by a macro, and scripts/check-headers.mjs compares the result with clang's
-// view of the headers at build time.
+// (`excludedFunctions`), and the generator fails if a header function is in none of the three.
 //
-// build/api.json carries every function's parameter names and TypeScript types for scripts/patch-types.mjs.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+// build/api.json carries everything scripts/emit-types.mjs needs for the declaration file.
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { additions, arrayCounts, excludedFunctions, excludedPrefixes, extraDefFields, headers, manualFunctions, manualStructs, nestedDefStructs, pointerFields, skippedFields } from './bindings.config.mjs';
+import { additions, arrayCounts, excludedFunctions, excludedPrefixes, extraDefFields, manualFunctions, manualStructs, nestedDefStructs, pointerFields, skippedFields } from './bindings.config.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const include = join(root, 'box2d', 'include', 'box2d');
 
 // ---------------------------------------------------------------------------------------------------------------
-// Parsing
+// Parsing: clang's AST of box2d.h (which includes every other public header)
 
-const callbackTypes = new Set(); // the function types (`typedef bool b2OverlapResultFcn(...)`) fields point at
+const ast = JSON.parse(execFileSync('emcc', [
+  '-x', 'c', '-fsyntax-only', '-Wno-pragma-once-outside-header', '-Xclang', '-ast-dump=json',
+  '-I', join(root, 'box2d', 'include'), join(root, 'box2d', 'include', 'box2d', 'box2d.h'),
+], { encoding: 'utf8', maxBuffer: 1 << 30 }));
 
-/** A header without comments or preprocessor lines. */
-function stripped(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '').replace(/\r/g, '').replace(/^[ \t]*#[^\n]*$/gm, '');
+/** The paragraphs of a declaration's doc comment, as one line; '' without one. */
+function docOf(node) {
+  const comment = (node.inner ?? []).find((n) => n.kind === 'FullComment');
+  if (!comment) return '';
+  const texts = [];
+  for (const paragraph of comment.inner ?? []) {
+    if (paragraph.kind !== 'ParagraphComment') continue;
+    for (const text of paragraph.inner ?? []) if (text.kind === 'TextComment') texts.push(text.text.trim());
+  }
+  return texts.filter(Boolean).join(' ').replace(/\s+/g, ' ').replace(/\*\//g, '* /');
 }
 
-/** A stripped header without function typedefs or brace groups (inline bodies, struct and enum bodies): every function is one declaration ending in `;`. */
-function functionsOnly(text) {
-  text = text.replace(/typedef\s+[^;{]*?\b(\w+)\s*\([^;]*\)\s*;/g, (_, name) => { callbackTypes.add(name); return ''; });
-  let previous;
-  do {
-    previous = text;
-    text = text.replace(/\{[^{}]*\}/g, ';'); // innermost first
-  } while (text !== previous);
-  return text;
+/** A C type as this file spells it: no space before `*`, `bool` for `_Bool`, no `struct`/`enum` tag. */
+const spell = (qualType) => qualType.replace(/\s*\*/g, '*').replace(/\b_Bool\b/g, 'bool').replace(/\b(struct|enum) /g, '').trim();
+
+const callbackTypes = new Set(); // the function types (`typedef bool b2OverlapResultFcn(...)`) that fields and parameters point at
+const enums = new Map(); // name -> { doc, values: [{ name, value, doc }] }
+const structs = new Map(); // name -> { name, doc, fields: [{ type, name, array, doc }], manual }
+const functions = []; // { name, doc, ret, params: [{ type, name }] }
+
+for (const node of ast.inner) {
+  if (!node.name?.startsWith('b2')) continue;
+  if (node.kind === 'TypedefDecl') {
+    if (node.type.qualType.includes('(')) callbackTypes.add(node.name);
+  } else if (node.kind === 'EnumDecl') {
+    const values = [];
+    let next = 0;
+    for (const constant of node.inner ?? []) {
+      if (constant.kind !== 'EnumConstantDecl') continue;
+      const given = (constant.inner ?? []).find((n) => n.kind === 'ConstantExpr');
+      const value = given ? Number(given.value) : next;
+      values.push({ name: constant.name, value, doc: docOf(constant) });
+      next = value + 1;
+    }
+    enums.set(node.name, { doc: docOf(node), values });
+  } else if (node.kind === 'RecordDecl' && node.completeDefinition) {
+    const fields = [];
+    let manual = null;
+    for (const field of node.inner ?? []) {
+      if (field.kind !== 'FieldDecl') continue;
+      const qualType = spell(field.type.qualType);
+      if (qualType.includes('(*)') || callbackTypes.has(qualType.replace(/\bconst\b/g, '').replace('*', '').trim())) {
+        manual = 'function pointer field'; // never a value object; a definition skips the field
+        continue;
+      }
+      const array = qualType.match(/^(.+?)\[(\d+)\]$/);
+      fields.push({ type: array ? array[1] : qualType, name: field.name, array: array ? Number(array[2]) : null, doc: docOf(field) });
+    }
+    structs.set(node.name, { name: node.name, doc: docOf(node), fields, manual });
+  } else if (node.kind === 'FunctionDecl') {
+    if (functions.some((f) => f.name === node.name)) continue;
+    const signature = node.type.qualType;
+    const ret = spell(signature.slice(0, signature.indexOf('(')));
+    const params = (node.inner ?? []).filter((n) => n.kind === 'ParmVarDecl').map((p, i) => ({ type: spell(p.type.qualType), name: p.name ?? `_${i}` }));
+    functions.push({ name: node.name, doc: docOf(node), ret, params });
+  }
 }
 
 const SCALARS = {
   float: 'number', int: 'number', bool: 'boolean', uint8_t: 'number', uint16_t: 'number', int16_t: 'number',
   uint32_t: 'number', int32_t: 'number', uint64_t: 'number', int64_t: 'number', double: 'number', unsigned: 'number',
 };
-const DECORATIONS = /\b(B2_API|B2_INLINE|B2_ID_INLINE|static|inline|extern)\b/g;
-
-const enums = new Map(); // name -> [values]
-const structs = new Map(); // name -> { name, fields: [{ type, name, array }], header, manual }
-const functions = []; // { name, ret, params: [{ type, name, array }], header }
-
-for (const header of headers) {
-  const text = stripped(readFileSync(join(include, header), 'utf8'));
-  const declarations = functionsOnly(text); // first: it collects the callback types the struct fields refer to
-  for (const match of text.matchAll(/typedef\s+enum\s+(\w+)\s*\{([^}]*)\}\s*\1\s*;/g)) {
-    const values = match[2].split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.split('=')[0].trim());
-    enums.set(match[1], values);
-  }
-  for (const match of text.matchAll(/typedef\s+struct\s+(\w+)\s*\{([^}]*)\}\s*\1\s*;/g)) {
-    const name = match[1];
-    const fields = [];
-    let manual = null;
-    for (const raw of match[2].split(';')) {
-      const line = raw.trim();
-      if (!line) continue;
-      if (line.includes('(')) {
-        manual = 'function pointer field'; // never a value object; a definition skips the field
-        continue;
-      }
-      const parts = line.match(/^(.+?)\s+([\w,\s\[\]]+)$/);
-      if (!parts) throw new Error(`${header}: cannot parse field '${line}' of ${name}`);
-      const type = parts[1].replace(/\s+/g, ' ').trim();
-      if (callbackTypes.has(type.replace(/\bconst\b/g, '').replace('*', '').trim())) {
-        manual = 'function pointer field';
-        continue;
-      }
-      for (const declarator of parts[2].split(',')) {
-        const field = declarator.trim().match(/^(\w+)(?:\[(\w+)\])?$/);
-        if (!field) throw new Error(`${header}: cannot parse declarator '${declarator}' of ${name}`);
-        fields.push({ type, name: field[1], array: field[2] ?? null });
-      }
-    }
-    structs.set(name, { name, fields, header, manual });
-  }
-  for (const match of declarations.matchAll(/([\w\s\*]+?)\s+(b2\w+)\s*\(([^)]*)\)\s*;/g)) {
-    const ret = match[1].replace(DECORATIONS, ' ').replace(/\s+/g, ' ').trim();
-    const name = match[2];
-    if (!ret || /^(return|sizeof|if|while|for)$/.test(ret)) throw new Error(`${header}: '${name}' looks like a call, not a declaration`);
-    const params = match[3].trim() === 'void' || !match[3].trim() ? [] : match[3].split(',').map((p) => {
-      const m = p.trim().match(/^(.+?)\s*(\w+)(?:\[(\w+)\])?$/);
-      if (!m) throw new Error(`${header}: cannot parse parameter '${p}' of ${name}`);
-      return { type: m[1].replace(/\s+/g, ' ').trim(), name: m[2], array: m[3] ?? null };
-    });
-    functions.push({ name, ret, params, header });
-  }
-}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Classification
@@ -126,7 +120,7 @@ function isValueStruct(name) {
   valueOk.set(name, true); // provisional, for cycles
   const ok = struct.fields.every((field) => {
     if (isPointerField(name, field)) return field.type === 'void*';
-    if (field.type.includes('*') || field.type.startsWith('struct ')) return false;
+    if (field.type.includes('*')) return false;
     const kind = kindOf(field.type);
     return kind === 'scalar' || kind === 'enum' || (kind === 'value' && isValueStruct(field.type));
   });
@@ -140,9 +134,17 @@ function tsType(type) {
   const bare = type.replace(/\bconst\b/g, '').replace('*', '').trim();
   if (SCALARS[bare]) return SCALARS[bare];
   if (bare === 'void') return 'void';
+  if (bare === 'char' && type.includes('*')) return 'string';
   if (enums.has(bare)) return bare;
   if (defStructs.has(bare) || structs.has(bare)) return bare;
   throw new Error(`no TypeScript type for '${type}'`);
+}
+
+/** The TypeScript type of a struct field. */
+function fieldTs(structName, field) {
+  if (isPointerField(structName, field)) return 'number';
+  const ts = tsType(field.type);
+  return field.array !== null ? `${ts}[]` : ts;
 }
 
 const is64 = (type) => type === 'uint64_t' || type === 'int64_t';
@@ -219,13 +221,14 @@ for (const struct of valueStructs) {
 // default (a nested definition, like a joint def's `base`, has none of its own and is applied in place).
 const converterDecls = [];
 const converterDefs = [];
-const defInputs = {}; // name -> the TypeScript input type
+const defTypes = {}; // name -> { doc, fields: [{ name, ts, doc }], input }
 for (const name of defStructs) {
   const struct = structs.get(name);
   if (!struct) throw new Error(`definition struct ${name} is not in the headers`);
   const skip = new Set(skippedFields[name] ?? []);
   const toJS = [`val ${name}ToJS(const ${name}& d) {`, '    val o = val::object();'];
   const apply = [`void ${name}Apply(${name}& d, val o) {`];
+  const fields = [];
   const nested = [];
   for (const field of struct.fields) {
     if (skip.has(field.name) || field.name === 'internalValue') continue;
@@ -233,6 +236,7 @@ for (const name of defStructs) {
       toJS.push(`    o.set("${field.name}", d.${field.name} ? std::string(d.${field.name}) : std::string());`);
       // Box2D copies the string at creation; the static only has to outlive the call.
       apply.push(`    if (!o["${field.name}"].isUndefined()) { static std::string s; s = o["${field.name}"].as<std::string>(); d.${field.name} = s.c_str(); }`);
+      fields.push({ name: field.name, ts: 'string', doc: field.doc });
       continue;
     }
     if (field.array !== null || field.type.includes('*')) throw new Error(`definition field ${name}.${field.name} needs a skippedFields entry or a converter`);
@@ -250,6 +254,7 @@ for (const name of defStructs) {
     } else {
       throw new Error(`definition field ${name}.${field.name} has unbindable type ${field.type}`);
     }
+    fields.push({ name: field.name, ts: tsType(field.type), doc: field.doc });
   }
   // The arrays behind pointer-and-count fields read out as JavaScript arrays; glue.cpp owns them on the way in.
   const extras = [];
@@ -265,7 +270,9 @@ for (const name of defStructs) {
     } else {
       throw new Error(`extraDefFields: ${name}.${extra.name} has unbindable element type ${element}`);
     }
-    extras.push({ name: extra.name, ts: `${element}[]`, tsInput: `${elementKind === 'def' ? `${element}Input` : element}[]`, doc: extra.doc, required: !!extra.required });
+    const ts = `${element}[]`;
+    fields.push({ name: extra.name, ts, doc: extra.doc });
+    extras.push({ name: extra.name, tsInput: `${elementKind === 'def' ? `${element}Input` : element}[]`, required: !!extra.required });
   }
   toJS.push('    return o;', '}');
   apply.push('}');
@@ -280,19 +287,16 @@ for (const name of defStructs) {
   const own = [...nested, ...extras];
   const base = own.length ? `Partial<Omit<${name}, ${own.map((f) => `'${f.name}'`).join(' | ')}>>` : `Partial<${name}>`;
   const members = [...nested.map((f) => `${f.name}?: ${f.ts}`), ...extras.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.tsInput}`)];
-  defInputs[name] = { input: members.length ? `${base} & { ${members.join('; ')} }` : base, extras };
+  defTypes[name] = { doc: struct.doc, fields, input: members.length ? `${base} & { ${members.join('; ')} }` : base };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Emission: functions
 
-const api = []; // for patch-types: { name, params: [{ name, ts }], ret }
+const api = []; // { name, doc, params: [{ name, ts }], ret }
 const functionLines = [];
 const unbound = [];
-const seen = new Set();
 for (const fn of functions) {
-  if (seen.has(fn.name)) continue;
-  seen.add(fn.name);
   if (excludedFunctions[fn.name]) continue;
   if (Object.keys(excludedPrefixes).some((prefix) => fn.name.startsWith(prefix))) continue;
   if (manualFunctions[fn.name]) continue;
@@ -303,7 +307,6 @@ for (const fn of functions) {
   const args = [];
   let paramsOk = retOk;
   for (const p of fn.params) {
-    if (p.array !== null) { paramsOk = false; break; }
     const pointer = p.type.endsWith('*');
     const bare = p.type.replace(/\bconst\b/g, '').replace('*', '').trim();
     const kind = kindOf(bare);
@@ -323,7 +326,7 @@ for (const fn of functions) {
     }
   }
   if (!paramsOk) {
-    unbound.push(`${fn.name}: ${fn.ret} (${fn.params.map((p) => `${p.type} ${p.name}${p.array !== null ? `[${p.array}]` : ''}`).join(', ')})`);
+    unbound.push(`${fn.name}: ${fn.ret} (${fn.params.map((p) => `${p.type} ${p.name}`).join(', ')})`);
     continue;
   }
   const direct = args.every((a) => !a.pre && !a.decl.startsWith('const ') && !a.decl.startsWith('double ')) && retKind !== 'def' && !is64(fn.ret);
@@ -340,7 +343,7 @@ for (const fn of functions) {
     const retDecl = retKind === 'def' ? 'val' : is64(fn.ret) ? 'double' : fn.ret;
     functionLines.push(`    function("${fn.name}", +[](${args.map((a) => a.decl).join(', ')}) -> ${retDecl} { ${body.join(' ')} });`);
   }
-  api.push({ name: fn.name, params: args.map((a) => ({ name: a.name, ts: a.ts })), ret: retKind === 'def' ? fn.ret : tsType(fn.ret) });
+  api.push({ name: fn.name, doc: fn.doc, params: args.map((a) => ({ name: a.name, ts: a.ts })), ret: retKind === 'def' ? fn.ret : tsType(fn.ret) });
 }
 
 // Every header function must be generated, manual or excluded; every manual function must be in the headers or a
@@ -357,6 +360,11 @@ if (unknownManual.length) {
 }
 for (const name of Object.keys(excludedFunctions)) if (!headerFunctionNames.has(name)) console.warn(`excludedFunctions: ${name} is not in the headers any more`);
 for (const name of additions) if (headerFunctionNames.has(name)) console.warn(`additions: ${name} is now in the headers`);
+const untyped = [...structs.keys()].filter((name) => !isValueStruct(name) && !defStructs.has(name) && !manualStructs[name]);
+if (untyped.length) {
+  console.error(`structs that are neither value objects, definitions nor listed in manualStructs: ${untyped.join(', ')}`);
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Write
@@ -368,9 +376,9 @@ emit('// ---- definition struct converters ----');
 for (const line of converterDefs) emit(line);
 emit('EMSCRIPTEN_BINDINGS(box2d_generated) {');
 emit('    // ---- enums ----');
-for (const [name, values] of enums) {
+for (const [name, { values }] of enums) {
   emit(`    enum_<${name}>("${name}")`);
-  values.forEach((v, i) => emit(`        .value("${v}", ${v})${i === values.length - 1 ? ';' : ''}`));
+  values.forEach((v, i) => emit(`        .value("${v.name}", ${v.name})${i === values.length - 1 ? ';' : ''}`));
 }
 emit('');
 emit('    // ---- value objects ----');
@@ -394,42 +402,14 @@ writeFileSync(join(root, 'csrc', 'generated.h'), [
   '',
 ].join('\n'));
 
-// The definition structs' JavaScript shape, for the declarations: the C fields the converters carry plus the extras.
-const defTypes = {};
-for (const name of defStructs) {
-  const skip = new Set(skippedFields[name] ?? []);
-  const fields = structs.get(name).fields
-    .filter((f) => !skip.has(f.name) && f.name !== 'internalValue')
-    .map((f) => ({ name: f.name, ts: f.type === 'const char*' ? 'string' : tsType(f.type) }));
-  for (const extra of defInputs[name].extras) fields.push({ name: extra.name, ts: extra.ts, doc: extra.doc });
-  defTypes[name] = { fields, input: defInputs[name].input };
-}
-
-// Array fields of value objects cross as JavaScript arrays; Emscripten declares them `any`.
-const arrayFields = [];
-for (const struct of valueStructs) {
-  for (const field of struct.fields) {
-    if (field.array === null) continue;
-    arrayFields.push({ struct: struct.name, field: field.name, ts: `${tsType(field.type)}[]` });
-  }
-}
-
+const headerDocs = Object.fromEntries(functions.filter((f) => manualFunctions[f.name]).map((f) => [f.name, f.doc]));
 writeFileSync(join(root, 'build', 'api.json'), JSON.stringify({
-  headerFunctions: [...headerFunctionNames].sort(),
-  enums: [...enums.keys()],
-  valueStructs: valueStructs.map((s) => s.name),
+  enums: [...enums].map(([name, { doc, values }]) => ({ name, doc, values })),
+  valueStructs: valueStructs.map((s) => ({ name: s.name, doc: s.doc, fields: s.fields.map((f) => ({ name: f.name, ts: fieldTs(s.name, f), doc: f.doc })) })),
   defStructs: defTypes,
-  arrayFields,
   functions: api,
+  manualDocs: headerDocs,
 }, null, 2));
 
-const bound = api.length;
-const manual = Object.keys(manualFunctions).filter((name) => headerFunctionNames.has(name)).length;
-const excluded = Object.keys(excludedFunctions).length;
 console.log(`headers: ${headerFunctionNames.size} functions, ${structs.size} structs, ${enums.size} enums`);
-console.log(`generated: ${bound} functions, ${valueStructs.length} value objects, ${defStructs.size} definition converters; manual: ${manual} (+${additions.size} additions); excluded: ${excluded}`);
-const untyped = [...structs.keys()].filter((name) => !isValueStruct(name) && !defStructs.has(name) && !manualStructs[name]);
-if (untyped.length) {
-  console.error(`structs that are neither value objects, definitions nor listed in manualStructs: ${untyped.join(', ')}`);
-  process.exit(1);
-}
+console.log(`generated: ${api.length} functions, ${valueStructs.length} value objects, ${defStructs.size} definition converters; manual: ${Object.keys(manualFunctions).filter((name) => headerFunctionNames.has(name)).length} (+${additions.size} additions); excluded: ${Object.keys(excludedFunctions).length}`);
