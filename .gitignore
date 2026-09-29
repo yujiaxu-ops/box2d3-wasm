@@ -1,2 +1,6 @@
-# esmcripten cache location used by GitHub Actions
-/emsdk-cache/
+# CMake trees and intermediate files of scripts/build.sh; the dist directories are committed.
+/build/cmake-*/
+/build/api.json
+# A developer's symlink to emsdk, for the debug source map to resolve (see README, Build).
+/build/emsdk
+/node_modules/

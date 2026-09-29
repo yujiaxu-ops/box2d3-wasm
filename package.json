@@ -1,0 +1,45 @@
+{
+  "name": "@mora/box2d3-wasm",
+  "version": "1.0.0",
+  "description": "Box2D v3 compiled to WebAssembly with generated embind bindings: plain JavaScript objects, no manual memory management. A fork of Birch-san/box2d3-wasm.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yujiaxu-ops/box2d3-wasm.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./build/dist/box2d.d.mts",
+      "default": "./build/dist/box2d.mjs"
+    },
+    "./debug": {
+      "types": "./build/dist-debug/box2d.d.mts",
+      "default": "./build/dist-debug/box2d.mjs"
+    }
+  },
+  "files": [
+    "build/dist/box2d.mjs",
+    "build/dist/box2d.wasm",
+    "build/dist/box2d.d.mts",
+    "build/dist-debug/box2d.mjs",
+    "build/dist-debug/box2d.wasm",
+    "build/dist-debug/box2d.wasm.map",
+    "build/dist-debug/box2d.d.mts",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "gen": "node scripts/gen-bindings.mjs",
+    "build": "scripts/build.sh release",
+    "build:debug": "scripts/build.sh debug",
+    "test": "node --test 'test/*.test.mjs'",
+    "typecheck": "tsc -p test/tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

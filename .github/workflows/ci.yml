@@ -1,0 +1,35 @@
+# Every push and pull request: build both variants with the pinned Emscripten, check that the committed artifacts
+# are exactly what the sources produce (nothing changed, nothing new), run the tests, and type-check the declarations.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  EM_VERSION: 4.0.18
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EM_VERSION }}
+          actions-cache-folder: emsdk-cache
+      - run: sudo apt-get install -y ninja-build
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:debug
+      - name: committed artifacts match the sources
+        run: |
+          git status --porcelain build csrc
+          test -z "$(git status --porcelain build csrc)"
+      - run: npm test
+      - run: npm run typecheck
