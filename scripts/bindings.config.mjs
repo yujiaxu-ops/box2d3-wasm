@@ -152,8 +152,6 @@ export const manualFunctions = {
   // Strings.
   b2Body_SetName: 'b2Body_SetName(bodyId: b2BodyId, name: string): void',
   b2Body_GetName: 'b2Body_GetName(bodyId: b2BodyId): string',
-  // Declared without B2_API at the pinned commit (C++ linkage); reached through csrc/linkage.c.
-  b2Body_ClearForces: 'b2Body_ClearForces(bodyId: b2BodyId): void',
   // The debug drawer: the flags of b2DebugDraw and the Draw* methods implemented in JavaScript, all optional.
   b2World_Draw: 'b2World_Draw(worldId: b2WorldId, draw: b2DebugDrawInput & b2DebugDrawCallbacks): void',
   // Additions of this binding.

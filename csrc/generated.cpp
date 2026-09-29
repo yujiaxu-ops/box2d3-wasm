@@ -1194,6 +1194,7 @@ EMSCRIPTEN_BINDINGS(box2d_generated) {
     function("b2Body_ApplyForce", &b2Body_ApplyForce);
     function("b2Body_ApplyForceToCenter", &b2Body_ApplyForceToCenter);
     function("b2Body_ApplyTorque", &b2Body_ApplyTorque);
+    function("b2Body_ClearForces", &b2Body_ClearForces);
     function("b2Body_ApplyLinearImpulse", &b2Body_ApplyLinearImpulse);
     function("b2Body_ApplyLinearImpulseToCenter", &b2Body_ApplyLinearImpulseToCenter);
     function("b2Body_ApplyAngularImpulse", &b2Body_ApplyAngularImpulse);

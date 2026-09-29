@@ -40,7 +40,7 @@ node "$ROOT/scripts/gen-bindings.mjs"
 mkdir -p "$DIST"
 emcc -lembind -msimd128 -msse2 "${PREFIX_MAP[@]}" "${EMCC_MODE[@]}" \
   -I"$ROOT/box2d/include" \
-  "$ROOT/csrc/glue.cpp" "$ROOT/csrc/generated.cpp" "$ROOT/csrc/linkage.c" "$CMAKE_DIR/src/$LIB" \
+  "$ROOT/csrc/glue.cpp" "$ROOT/csrc/generated.cpp" "$CMAKE_DIR/src/$LIB" \
   -o "$DIST/box2d.mjs" \
   --post-js csrc/post.js \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createBox2D \

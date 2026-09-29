@@ -1610,6 +1610,8 @@ export interface Box2D {
   b2Body_ApplyForceToCenter(bodyId: b2BodyId, force: b2Vec2, wake: boolean): void;
   /** Apply a torque. This affects the angular velocity without affecting the linear velocity. This optionally wakes the body. The torque is ignored if the body is not awake. */
   b2Body_ApplyTorque(bodyId: b2BodyId, torque: number, wake: boolean): void;
+  /** Clear the force and torque on this body. Forces and torques are automatically cleared after each world step. So this only needs to be called if the application wants to remove the effect of previous calls to apply forces and torques before the world step is called. */
+  b2Body_ClearForces(bodyId: b2BodyId): void;
   /** Apply an impulse at a point. This immediately modifies the velocity. It also modifies the angular velocity if the point of application is not at the center of mass. This optionally wakes the body. The impulse is ignored if the body is not awake. */
   b2Body_ApplyLinearImpulse(bodyId: b2BodyId, impulse: b2Vec2, point: b2Vec2, wake: boolean): void;
   /** Apply an impulse to the center of mass. This immediately modifies the velocity. The impulse is ignored if the body is not awake. This optionally wakes the body. */
@@ -2143,8 +2145,6 @@ export interface Box2D {
   b2Body_SetName(bodyId: b2BodyId, name: string): void;
   /** Get the body name. */
   b2Body_GetName(bodyId: b2BodyId): string;
-  /** Clear the force and torque on this body. Forces and torques are automatically cleared after each world step. So this only needs to be called if the application wants to remove the effect of previous calls to apply forces and torques before the world step is called. */
-  b2Body_ClearForces(bodyId: b2BodyId): void;
   /** Call this to draw shapes and other debug draw data */
   b2World_Draw(worldId: b2WorldId, draw: b2DebugDrawInput & b2DebugDrawCallbacks): void;
   /** Stores an integer as the world's user data, in place of the raw pointer. */

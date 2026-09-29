@@ -5,8 +5,10 @@ headers. Structs are plain JavaScript objects, definitions take any subset of th
 exceptions never cross into wasm, and the declarations are complete.
 
 This is a fork of [box2d3-wasm](https://github.com/Birch-san/box2d3-wasm) by Alex Birch and Erik Sombroek, made for
-the Mora game engine. It keeps their Emscripten and embind approach and the pinned Box2D commit, and replaces the
-hand-written glue with a generator. See [CHANGELOG.md](CHANGELOG.md) for what changed and why.
+the Mora game engine. It keeps their Emscripten and embind approach and the pinned Box2D commit (through
+[our fork of Box2D](https://github.com/yujiaxu-ops/box2d), which adds upstream's one-line export of
+`b2Body_ClearForces` to it), and replaces the hand-written glue with a generator. See [CHANGELOG.md](CHANGELOG.md)
+for what changed and why.
 
 ## Use
 
@@ -79,10 +81,9 @@ own callbacks and reports it the same way. After any of these the module is inta
 ## Layout
 
 ```
-box2d/                 Box2D, a git submodule at the pinned commit
+box2d/                 Box2D, a git submodule: our fork (yujiaxu-ops/box2d), the pinned commit plus upstream's one-line export of b2Body_ClearForces
 csrc/glue.h, glue.cpp  the hand-written bindings: callbacks, arrays, strings, events, out-parameters, debug draw, user data
 csrc/post.js           appended to the module: the callback guard and the wrapper around every export (see Exceptions)
-csrc/linkage.c         reaches b2Body_ClearForces, which the header declares without C linkage at the pinned commit
 csrc/generated.*       what scripts/gen-bindings.mjs writes from Box2D's headers (committed, so a diff shows a change)
 scripts/bindings.config.mjs  the decisions: what is hand-written, what is excluded and why, the hand-written signatures
 scripts/gen-bindings.mjs     the generator: reads the headers as clang's AST, writes the bindings and build/api.json

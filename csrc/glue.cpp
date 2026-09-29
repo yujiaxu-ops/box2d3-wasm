@@ -17,8 +17,6 @@
 
 using namespace emscripten;
 
-extern "C" void b2Body_ClearForces_C(b2BodyId bodyId); // csrc/linkage.c: the header declares it with C++ linkage
-
 namespace {
 
 // ---- calling into JavaScript ----
@@ -483,6 +481,5 @@ EMSCRIPTEN_BINDINGS(box2d_manual) {
     function("b2Joint_SetUserDataInt", &b2Joint_SetUserDataInt);
     function("b2Joint_GetUserDataInt", &b2Joint_GetUserDataInt);
     function("b2World_Draw", &b2World_Draw_JS);
-    function("b2Body_ClearForces", &b2Body_ClearForces_C);
     function("getMemoryStats", &getMemoryStats);
 }
